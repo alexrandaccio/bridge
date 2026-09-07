@@ -160,3 +160,30 @@ The agent periodically checks for a newer version and, if available, downloads a
 
 **Monitoring & Support**
 The agent reports health and status to Concourse's monitoring systems, including fallback-tier status per entity, outage history, and any flagged conditions. This gives Concourse visibility and the ability to intervene proactively, without placing that burden on the library's own operator.
+
+# Prioritized Risk Register
+
+### 1. Schema mismapping leading to PII exposure
+**Impact:** High. Confusing a sensitive entity (Patrons) with a non-sensitive one (e.g., Authors) during discovery could expose private patron data through the public-facing portal — a confidentiality breach, not just a data-quality issue.
+**Mitigation:** Sensitivity scoring is performed independently of the proposed entity label, so a mislabeled table cannot bypass review by virtue of being assigned an innocuous-looking slot. Any statistical validation beyond column-name heuristics runs against a small, bounded on-premises sample and is never transmitted off-premises as raw data — only aggregate signals and metadata reach the cloud's mapping service. PII-bearing or low-confidence mappings require human confirmation via the Concourse Support Interface before going live.
+**Known limitation:** Heuristic and statistical signals can still miss incidental PII embedded in an otherwise unstructured free-text field (e.g., a staff comment containing a phone number). This is an accepted residual risk rather than a gap the design claims to close entirely.
+
+### 2. Write-back activity threatening production stability
+**Impact:** High. Given unknown indexing/configuration, write-back operations (place hold, pay fine, update contact info) risk both lock contention with the POS system's own transactions and, if a large write-back backlog were drained in a single uncontrolled pass, degraded responsiveness at the circulation desk — directly threatening a stated core requirement (patrons placing holds/paying fines) and the zero-production-impact constraint.
+**Mitigation:** The Bridge Agent always sets its own connections as the deadlock-priority "loser," guaranteeing any deadlock resolves in favor of the POS system, never against it; write transactions are kept short and narrow with explicit lock-wait timeouts; conditional idempotent SQL makes retries safe regardless of cause. Separately, the number of pending write-backs pulled and executed per cycle is capped, so a large backlog drains over several cycles rather than being committed in one pass.
+
+### 3. Schema drift after upstream POS software updates
+**Impact:** Medium-High. A vendor patch to the legacy software could silently rename or restructure a column the Bridge Agent depends on, causing sync to fail or — worse — silently mismap without anyone noticing until a support complaint.
+**Mitigation:** Schema discovery and mapping validation run continuously, not just at first install; a previously-confirmed mapping that no longer validates is re-flagged rather than allowed to drift silently, and surfaced to Concourse's monitoring.
+
+### 4. Zero-impact violation during large/unbounded read operations
+**Impact:** Medium. Initial backfill, long-outage catch-up, or a persistent full-scan-fallback entity could place enough load on the shared server to affect POS responsiveness, violating the most operationally sensitive constraint.
+**Mitigation:** Mandatory pagination/chunking for any large read; size-threshold-triggered off-peak deferral for oversized operations; a persistently full-scan-tier entity is treated as an alertable condition rather than silently tolerated.
+
+### 5. Local buffer/state loss or corruption on the library server
+**Impact:** Medium. The Operator's server is a shared, non-technical-operator-managed machine — disk issues, unexpected reboots, or storage exhaustion could threaten the Local Buffer or checkpoint state the Bridge Agent depends on for outage resilience.
+**Mitigation:** Bounded buffer size (a max-size ceiling triggers a pause, not unbounded growth); the cloud-side watermark/queue remains the ultimate source of truth, so local state loss degrades gracefully (re-sync from the last confirmed cloud checkpoint) rather than causing permanent data loss. This risk is scoped specifically to the read-side Local Buffer — pending write-back instructions carry no equivalent exposure, since their durability is owned entirely by the cloud-side Pending Write-Back Queue, not by any on-premises state.
+
+---
+
+*Considered but not ranked in the top five:* multi-library burst load on shared cloud ingestion at consortium scale (explicitly out of pilot scope); audit trail tampering by a privileged on-premises actor (mitigated architecturally by cloud-side, append-only storage, leaving low residual risk).
