@@ -262,7 +262,7 @@ The agent reports health and status to Concourse's monitoring systems, including
 
 **Mitigation:** A cheap per-cycle metadata fingerprint check detects drift on every mapped entity; only a mismatch triggers full re-mapping for that entity, which is then re-flagged rather than allowed to drift silently, and surfaced to Concourse's monitoring.
 
-### 4. Zero-impact violation during large/unbounded read operations
+### 4. Large/unbounded read operations threatening production stability
 **Impact:** Medium. Initial backfill, long-outage catch-up, or a persistent full-scan-fallback entity could place enough load on the shared server to affect Library POS System responsiveness, violating the most operationally sensitive constraint.
 
 **Mitigation:** Mandatory pagination/chunking for any large read; size-threshold-triggered off-peak deferral for oversized operations; a persistently full-scan-tier entity is treated as an alertable condition rather than silently tolerated.
