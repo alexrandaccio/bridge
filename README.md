@@ -42,7 +42,7 @@ The Bridge operates as a repeating cycle once installed, bracketed by one-time s
 4. Metadata and aggregate statistics only (never raw row values) are sent to the cloud's Schema Mapping Service, which uses an AI-assisted step to generate a human-readable mapping rationale.
 5. A candidate entity auto-proceeds only if it clears two independent gates: sufficient mapping confidence, and no positive sensitivity signal. Any candidate failing either gate is routed to the Concourse Support Interface, along with its rationale and underlying signals, for review.
 6. Confirmed mappings (automatic or human-reviewed) begin live sync. Every mapping decision, including who or what made it, is written to the immutable audit trail.
-7. Discovery re-runs periodically against live mappings to detect schema drift (e.g., a vendor software update altering a column), re-flagging anything that no longer validates rather than allowing silent drift.
+7. Each cycle, a cheap schema-metadata check (comparing a stored fingerprint of column names/types against the live catalog) runs for every mapped entity. Only on a fingerprint mismatch does that specific entity go back through full discovery and mapping — keeping routine drift detection inexpensive while still catching a vendor software update that silently alters a column.
 
 ## Steady-State Cycle (repeating)
 Each cycle proceeds in three ordered phases:
@@ -88,6 +88,9 @@ Write-back instructions differ from synced data in one important respect: the cl
 
 **Schema Discovery & PII Protection**
 Discovery introduces its own data-handling boundary, separate from steady-state sync: candidate tables are scored for PII-like signals independently of which business entity they're proposed as, so a mislabeled table cannot bypass sensitivity review by virtue of being assigned an innocuous-looking slot. Any statistical validation needed beyond column-name heuristics is computed on a small, bounded on-premises sample — never a full-table read, and never transmitted off-premises as raw values. Only metadata and aggregate statistics reach the cloud's Schema Mapping Service, which means raw patron data cannot leave the premises during discovery regardless of how that downstream service is configured or operated.
+ 
+**Immutable Audit Trail**
+The audit trail uses write-once storage (e.g., object storage with Object Lock/retention enabled) rather than a database table protected by permissions alone. This guards primarily against *accidental* loss — a bad migration, an overbroad maintenance script, a misconfigured role — which is the more realistic risk here than deliberate tampering, and write-once storage prevents it structurally, even against a fully privileged account.
 
 ---
 
@@ -96,7 +99,7 @@ Discovery introduces its own data-handling boundary, separate from steady-state 
 This section covers how the Bridge determines what has changed, applies changes in a safe and repeatable order, and reconciles the roles of the on-premises database and the cloud-based Synced Data Store when they appear to disagree.
 
 **Schema & Capability Discovery**
-Because the customer's schema, indexing, and feature set are unknown in advance and cannot be altered, the Bridge Agent performs discovery per installation, run initially and re-validated continuously thereafter to catch drift from vendor software updates. For each business entity, it probes for the best available change-detection mechanism in order of preference: native change-tracking if present, a reliable watermark column, a monotonic key (suited to append-heavy/append-only entities), or full-table comparison as a last resort. The selected tier per entity is a logged, diagnosable decision, never a silent assumption.
+Because the customer's schema, indexing, and feature set are unknown in advance and cannot be altered, the Bridge Agent performs discovery per installation, then re-checks it every cycle via a cheap schema-metadata fingerprint comparison — full re-mapping only triggers on a mismatch, keeping routine drift detection inexpensive. For each business entity, it probes for the best available change-detection mechanism in order of preference: native change-tracking if present, a reliable watermark column, a monotonic key (suited to append-heavy/append-only entities), or full-table comparison as a last resort. The selected tier per entity is a logged, diagnosable decision, never a silent assumption.
 
 **Schema Mapping**
 Discovery also identifies which physical tables/columns correspond to each business entity, gated by two independent checks — mapping confidence and sensitivity — before any entity begins syncing live data. Full detail is covered under Security Model, given its data-protection implications.
@@ -174,7 +177,7 @@ The agent reports health and status to Concourse's monitoring systems, including
 
 ### 3. Schema drift after upstream Library POS System updates
 **Impact:** Medium-High. A vendor patch to the legacy software could silently rename or restructure a column the Bridge Agent depends on, causing sync to fail or — worse — silently mismap without anyone noticing until a support complaint.
-**Mitigation:** Schema discovery and mapping validation run continuously, not just at first install; a previously-confirmed mapping that no longer validates is re-flagged rather than allowed to drift silently, and surfaced to Concourse's monitoring.
+**Mitigation:** A cheap per-cycle metadata fingerprint check detects drift on every mapped entity; only a mismatch triggers full re-mapping for that entity, which is then re-flagged rather than allowed to drift silently, and surfaced to Concourse's monitoring.
 
 ### 4. Zero-impact violation during large/unbounded read operations
 **Impact:** Medium. Initial backfill, long-outage catch-up, or a persistent full-scan-fallback entity could place enough load on the shared server to affect Library POS System responsiveness, violating the most operationally sensitive constraint.
