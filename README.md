@@ -57,7 +57,7 @@ Each cycle proceeds in three ordered phases:
 If connectivity drops, the Bridge Agent continues forward-sync detection and encryption, buffering locally up to a configured maximum size; if that ceiling is reached, detection pauses rather than growing the buffer unbounded. On reconnection, the buffer drains immediately, streamed with local resource caps so the drain doesn't compete with the Library POS System for the shared server's CPU, disk, or bandwidth. The next detection cycle simply uses a wider watermark window — the same mechanism as steady state — paginated, and deferred to an off-peak window if the resulting read exceeds a configured size threshold. The outage period itself (start, end, backlog size) is logged as its own audit event.
 
 ## Updates & Monitoring
-The agent periodically checks for a newer signed release and, if available, downloads and swaps in a complete replacement binary. Throughout operation, it reports health, fallback-tier status, and any flagged conditions (a persistently degraded entity, an unresolved mapping) to Concourse's monitoring systems. the Operator sees only a simple status indicator and plain-language alerts; richer diagnostics are available to Concourse support.
+The agent periodically checks for a newer signed release and, if available, downloads and swaps in a complete replacement binary during off-peak hours. Throughout operation, it reports health, fallback-tier status, and any flagged conditions (a persistently degraded entity, an unresolved mapping) to Concourse's monitoring systems. the Operator sees only a simple status indicator and plain-language alerts; richer diagnostics are available to Concourse support.
 
 ---
 
@@ -159,7 +159,7 @@ On first launch, the Bridge Agent performs schema discovery and capability probi
 The agent runs as an unattended background service. the Operator's ongoing interaction is limited to an at-a-glance status indicator and, if something requires attention, a plain-language alert — never a log file, stack trace, or configuration setting to interpret. Detailed diagnostics are directed to Concourse's own monitoring.
 
 **Updates**
-The agent periodically checks the Updates Service for a newer version and, if available, downloads a complete, signature-verified replacement binary over HTTPS and swaps it in — preserving the single-binary, no-dependency-resolution constraint even for updates. This requires no action from the Operator beyond, at most, an informational status change.
+The agent periodically checks the Updates Service for a newer version and, if available, downloads a complete, signature-verified replacement binary over HTTPS and swaps it in during off-peak hours — preserving the single-binary, no-dependency-resolution constraint even for updates. This requires no action from the Operator beyond, at most, an informational status change.
 
 **Monitoring & Support**
 The agent reports health and status to Concourse's monitoring systems, including fallback-tier status per entity, outage history, and any flagged conditions. This gives Concourse visibility via the Concourse Support Interface and the ability to intervene proactively, without placing that burden on the library's own operator.
