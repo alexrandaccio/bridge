@@ -89,15 +89,15 @@ The Bridge operates as a repeating cycle once installed, bracketed by one-time s
 ## Steady-State Cycle (repeating)
 Each cycle proceeds in three ordered phases:
 
-**1. Forward sync.**
+**1. Forward sync**
 
 For each entity, the Bridge Agent runs its selected change-detection query against SQL Server, encrypts any changed rows in memory using its public key, appends them to the local encrypted buffer, and transmits the buffer's contents to the cloud ingestion endpoint over HTTPS. The cloud decrypts via KMS and applies each record to the Synced Data Store using a version-conditional upsert (newer-than-stored only), with Holds additionally validated against its state machine. Every batch is logged to the immutable audit trail.
 
-**2. Write-back execution.**
+**2. Write-back execution**
 
 Because forward-sync has just run, the cloud can first discard any pending write-back instruction that forward-sync has already rendered moot (e.g., a fine already waived on-premises). The agent then pulls a capped number of remaining pending instructions — never the full queue — bounding how many writes it commits to executing against the production database in a single pass. Each instruction is applied as a conditional SQL statement, executed as a short, narrow transaction with an explicit lock-wait timeout, and with the Bridge Agent's connection always set as the deadlock-priority "loser" so contention never causes a Library POS System transaction to fail. If a write returns no rows affected, the Bridge Agent performs a diagnostic read to distinguish a confirmed prior success from a genuine conflict with current on-premises state, which is treated as authoritative.
 
-**3. Outcome reporting.**
+**3. Outcome reporting**
 
 Results (successes, confirmed no-ops, and rejections) are encrypted and transmitted through the same pipeline used for forward sync. The cloud's write-back outcome tracker reconciles these against the pending queue, closes out completed items, releases or captures payment authorizations accordingly, and logs every outcome — including retries — as a distinct, immutable audit event.
 
