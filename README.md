@@ -189,6 +189,10 @@ Fine payments use an authorize-then-capture pattern: the portal authorizes funds
 
 This section addresses what happens when connectivity is lost, when a write contends with the Library POS System, and when a crash leaves an operation's outcome ambiguous — with production stability treated as the overriding priority throughout.
 
+**Transient Failure Retry Policy**
+
+The Bridge Agent retries transient failures with exponential backoff up to a capped number of attempts; only once that cap is exceeded does the agent treat the situation as an outage (buffering locally on the cloud side, or waiting before its next attempt on the SQL Server side) rather than continuing to retry indefinitely. This keeps a brief blip from being mistaken for an outage while preventing repeated immediate retries from adding load to an already-struggling service.
+
 **Network Outages**
 
 Given the library's consumer-grade, occasionally-unreliable connection, the Bridge Agent prioritizes the production database's normal operation over sync freshness whenever the two are in tension. During an outage, the Bridge Agent continues its normal detection cadence and encrypts and buffers changes locally, up to a configured maximum buffer size. If that ceiling is reached, detection pauses rather than allowing unbounded local growth — a deliberate, graceful degradation rather than a failure state.
