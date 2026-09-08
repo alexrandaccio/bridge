@@ -7,7 +7,7 @@
 | **SQL Server** | The library's existing, unmodified operational database. |
 | **Library POS System** | The catalog/patron-management software the library already runs. The Bridge Agent never interacts with this software directly, only with SQL Server. |
 | **Local Buffer** | On-premises encrypted flat-file storage holding forward-sync data pending transmission. Not used for write-back instructions, which are never durably held on-premises. |
-| **Operator Interface** | The on-premises status and alert surface presented to the Operator: first-run report, ongoing status indicator, and plain-language alerts. |
+| **Operator Interface** | The on-premises status and alert surface presented to the Operator: first-run report, ongoing status indicator, plain-language alerts, and a one-click "report this" action that quietly sends current diagnostics to the Concourse Support Interface. |
 | **Operator** | The library's non-technical on-site IT support role, responsible for installation and basic upkeep only — never log interpretation or configuration file maintenance. |
 | **Enrollment Service** | Cloud service issuing a unique device identity and public/private key pair to each Bridge Agent at install time. |
 | **Key Management Service (KMS)** | Cloud-managed service holding each installation's private key. Never exports it in plaintext; performs all decryption of data received from the Bridge Agent. |
@@ -23,6 +23,14 @@
 | **Concourse Support Interface** | The surface used by Concourse staff to review and confirm flagged schema mappings, and to view richer diagnostics and intervene on flagged operational conditions. Combines what would otherwise be a separate mapping-review queue and support/monitoring view into one staff-facing surface. |
 | **Patron Web Portal** | The patron-facing website: account view, catalog browsing, checkout history, holds, fines, and contact info. |
 | **Patron Portal API Services** | Backend layer behind the Patron Web Portal, mediating reads from the Synced Data Store and writes into the Pending Write-Back Queue and Payment Authorization/Capture Service. |
+
+---
+
+## Material Assumptions
+- **A native, statically-compilable SQL Server driver is available**, avoiding a runtime ODBC dependency that would conflict with the single-binary constraint. This is treated as an implementation-language constraint, not a given.
+- **Each business entity, or the fields within it, can be reasonably distinguished by discovery** (e.g., availability status vs. descriptive catalog metadata) even though the underlying schema is unknown in advance. Where this assumption fails for a given customer, the design falls back to full-table comparison, at a higher production-impact cost.
+- **The library's operational needs tolerate near-real-time, not real-time, patron-facing sync**, and a brief "pending" state in the portal for in-flight write-backs is an acceptable user experience rather than a defect.
+- **Human review capacity exists within Concourse's own team (the Concourse Support Interface)** for low-confidence or sensitive schema mappings. This is not asked of the Operator, since the ambiguous cases requiring review are, by definition, exactly the ones an unfamiliar-schema judgment call could get wrong — the same failure mode the design otherwise hardens against. At consortium scale, review load is expected to track the number of *distinct* ILS platforms/schema patterns encountered, not the number of libraries: once a platform's schema signature has been confirmed once, future installs recognized as the same platform can reuse that confidence rather than starting from zero.
 
 ---
 
@@ -156,7 +164,7 @@ The Bridge ships as a single, statically-compiled binary with no runtime depende
 On first launch, the Bridge Agent performs schema discovery and capability probing automatically, without requiring the Operator's input or judgment. It presents a simple, plain-language status summary per business entity via the Operator Interface rather than technical diagnostic detail. Any mapping requiring human confirmation is routed to the Concourse Support Interface, not to the Operator.
 
 **Ongoing Operation**
-The agent runs as an unattended background service. the Operator's ongoing interaction is limited to an at-a-glance status indicator and, if something requires attention, a plain-language alert — never a log file, stack trace, or configuration setting to interpret. Detailed diagnostics are directed to Concourse's own monitoring.
+The agent runs as an unattended background service. the Operator's ongoing interaction is limited to an at-a-glance status indicator and, if something requires attention, a plain-language alert — never a log file, stack trace, or configuration setting to interpret. Detailed diagnostics are directed to Concourse's own monitoring. If an alert doesn't resolve on its own, a single "report this" button — similar to a browser's crash-report prompt — quietly sends current diagnostic context to the Concourse Support Interface, closing the loop without asking the Operator to describe or diagnose anything.
 
 **Updates**
 The agent periodically checks the Updates Service for a newer version and, if available, downloads a complete, signature-verified replacement binary over HTTPS and swaps it in during off-peak hours — preserving the single-binary, no-dependency-resolution constraint even for updates. This requires no action from the Operator beyond, at most, an informational status change.
