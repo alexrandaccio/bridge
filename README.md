@@ -144,6 +144,9 @@ Write-back operations introduce a risk read operations do not: locking that can 
 
 **Write Failures**
 A failed or rejected write-back is reported back to the cloud and surfaced to the patron rather than silently retried into a possibly-incorrect outcome. Combined with conditional idempotent SQL, retries are always safe to attempt regardless of the failure's cause. If a write returns no rows affected, a diagnostic read distinguishes a confirmed prior success from a genuine conflict with current on-premises state.
+ 
+**Full-Table Comparison Baseline Recovery**
+The full-table comparison fallback (Tier 4) detects changes by diffing each scan against a local key-and-row-hash baseline from the previous scan. This baseline is kept and updated locally so the Bridge Agent can keep detecting changes without any cloud dependency, including during an outage. If that local baseline is ever lost (disk issue, reinstall), it is not a permanent gap: since the Synced Data Store already holds the same row-hash information for entities on this tier, the agent can rebuild its baseline from the cloud as a one-time recovery step, then resume normal local-only operation.
 
 **Known Limitation: Environment-Dependent Reliability**
 Because the customer's indexing and configuration cannot be assumed or modified, some environments may experience write contention more than others despite these mitigations, and an entity may be structurally unable to support efficient change detection (permanently falling back to full-table comparison). Rather than engineering around this indefinitely, the design treats a persistently degraded entity as a flagged, alertable condition visible to Concourse's operational monitoring, rather than something absorbed silently or allowed to violate the zero-production-impact requirement.
