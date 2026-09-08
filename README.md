@@ -1,3 +1,46 @@
+# Alex Randaccio Concourse Design Challenge Submission
+
+This document describes the Bridge, the data synchronization system connecting the Maplewood Public Library's on-premises SQL Server environment with Concourse's cloud-hosted patron portal.
+
+*Tool Disclosure: I used Claude to assist me as I reasoned through this design and drafted this document.*
+
+---
+ 
+# Key Design Principles, Tradeoffs, and Assumptions
+ 
+This section surfaces the reasoning threads that run across multiple parts of the design.
+ 
+## Governing Principles
+- **Production stability outranks sync freshness or cloud convenience in any conflict.** Wherever a choice existed between keeping the library's POS system fully responsive and keeping the cloud portal current, this design chose the former — deadlock priority, capped write-back batching, and paginated/off-peak-deferred large reads all follow from this one rule.
+- **The on-premises SQL Server is the sole authority on business state; the cloud is authoritative only over sync bookkeeping.** The Synced Data Store is a mirror, not an independent source of truth. Write-backs are treated as proposals the on-premises database is free to reject; the cloud never overrides on-premises state, only reconciles what it has already been told.
+- **No long-lived key capable of decrypting patron data is ever present on the library's server**, satisfied structurally (asymmetric encryption, agent holds only the public key) rather than procedurally (rotation policy, access controls).
+- **Discovery-time data handling is held to the same PII-protection standard as the rest of the system, independent of how confidently an entity has been labeled.** Sensitivity is scored on each candidate's own characteristics, not inherited from its proposed classification, so a mislabeling error cannot silently bypass review.
+
+## Notable Tradeoffs
+- **Rejected a two-tier fast/slow synchronization pipeline** in favor of one uniform mechanism across all six entities. A fast/slow split initially seemed to match the brief's stated staleness tolerance for reference data, but tracing through the actual query cost showed the efficiency gain was small, while the complexity (and new failure modes, including cases where a "slow" entity contained fast-relevant fields, such as catalog availability) was not justified by that gain.
+- **Rejected local, durable buffering for write-back instructions.** This was seriously considered, since it initially looked like the most consistent design. It was set aside once the durability question was traced through: the cloud already owns durability for pending write-backs (an un-pulled instruction is never at risk, since it simply waits in the cloud queue), so local buffering would have reopened the encryption model to solve a problem that doesn't exist.
+- **Chose bounded, capped-per-cycle write-back execution over unbounded backlog draining.** This trades faster catch-up after an outage for consistent, predictable load on the production database in every cycle — consistent with the governing production-stability principle above.
+- **Chose to keep raw row-level content strictly on-premises during schema discovery**, even where a bounded, sampled read to the cloud might have simplified the mapping pipeline. This was a deliberate choice to keep the "no raw patron data leaves the premises pre-classification" guarantee absolute rather than dependent on downstream handling.
+
+## Material Assumptions
+- **A native, statically-compilable SQL Server driver is available**, avoiding a runtime ODBC dependency that would conflict with the single-binary constraint. This is treated as an implementation-language constraint, not a given.
+- **Each business entity, or the fields within it, can be reasonably distinguished by discovery** (e.g., availability status vs. descriptive catalog metadata) even though the underlying schema is unknown in advance. Where this assumption fails for a given customer, the design falls back to full-table comparison, at a higher production-impact cost.
+- **The library's operational needs tolerate near-real-time, not real-time, patron-facing sync**, and a brief "pending" state in the portal for in-flight write-backs is an acceptable user experience rather than a defect.
+- **Human review capacity exists within Concourse's own team** for low-confidence or sensitive schema mappings. This is not asked of the Operator, since the ambiguous cases requiring review are, by definition, exactly the ones an unfamiliar-schema judgment call could get wrong — the same failure mode the design otherwise hardens against. At consortium scale, review load is expected to track the number of *distinct* ILS platforms/schema patterns encountered, not the number of libraries: once a platform's schema signature has been confirmed once, future installs recognized as the same platform can reuse that confidence rather than starting from zero.
+
+## Known, Accepted Limitations
+- Heuristic and statistical PII-detection signals cannot guarantee detection of incidental PII embedded in unstructured free-text fields.
+- An entity may be structurally unable to support efficient change detection in a given customer's environment (permanent full-scan fallback); this is surfaced as a monitored, alertable condition rather than a scenario the design claims to fully solve.
+- Write reliability may vary by customer environment given unknown indexing and configuration; mitigations reduce but do not eliminate this variability.
+
+---
+
+# Architecture Diagram
+
+![Architecture Diagram](architecture-diagram.png)
+
+---
+
 # System Components
 
 | Component | Responsibility |
